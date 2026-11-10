@@ -76,12 +76,22 @@ func (m *IL) Run(acq *acquisition.Acquisition, fast bool) error {
 
 	// Ask user first
 	log.Info("Would you like to download Intrusion Logs from the device?")
-	promptIL := promptui.Select{
-		Label: "Intrusion Logs",
-		Items: []string{acquireIL, skipIL},
+	// SleuthX fork: an -intrusion-logs answer (upstream #112) is used instead of the prompt.
+	ilFlag := ""
+	switch CurrentOptions.IntrusionLogs {
+	case "yes":
+		ilFlag = acquireIL
+	case "no":
+		ilFlag = skipIL
 	}
-
-	_, ILOption, err := promptIL.Run()
+	ILOption, err := resolveOption(CurrentOptions, ilFlag, "-intrusion-logs (yes, no)", func() (string, error) {
+		promptIL := promptui.Select{
+			Label: "Intrusion Logs",
+			Items: []string{acquireIL, skipIL},
+		}
+		_, option, err := promptIL.Run()
+		return option, err
+	})
 	if err != nil {
 		return fmt.Errorf("failed to make selection for IL option: %v", err)
 	}

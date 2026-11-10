@@ -21,6 +21,19 @@ const (
 	backupNothing    = "No backup"
 )
 
+// backupFlagLabel maps a -backup value onto the prompt's own label ("" when not given).
+func backupFlagLabel(value string) string {
+	switch value {
+	case "sms":
+		return backupOnlySMS
+	case "all":
+		return backupEverything
+	case "none":
+		return backupNothing
+	}
+	return ""
+}
+
 type Backup struct {
 	StoragePath string
 }
@@ -40,11 +53,15 @@ func (b *Backup) InitStorage(storagePath string) error {
 
 func (b *Backup) Run(acq *acquisition.Acquisition, fast bool) error {
 	log.Info("Would you like to take a backup of the device?")
-	promptBackup := promptui.Select{
-		Label: "Backup",
-		Items: []string{backupOnlySMS, backupEverything, backupNothing},
-	}
-	_, backupOption, err := promptBackup.Run()
+	// SleuthX fork: a -backup answer (upstream #112) is used instead of the prompt.
+	backupOption, err := resolveOption(CurrentOptions, backupFlagLabel(CurrentOptions.Backup), "-backup (sms, all, none)", func() (string, error) {
+		promptBackup := promptui.Select{
+			Label: "Backup",
+			Items: []string{backupOnlySMS, backupEverything, backupNothing},
+		}
+		_, option, err := promptBackup.Run()
+		return option, err
+	})
 	if err != nil {
 		return fmt.Errorf("failed to make selection for backup option: %v", err)
 	}
@@ -73,7 +90,13 @@ func (b *Backup) Run(acq *acquisition.Acquisition, fast bool) error {
 	} else {
 		// Traditional mode: write backup directly into acquisition directory
 		backupPath := filepath.Join(b.StoragePath, "backup.ab")
-		err = adb.Client.Backup(backupPath, arg)
+		// SleuthX fork: bounded wait. `adb backup` blocks until someone taps the on-device prompt;
+		// unattended, nobody may, so give up after -backup-timeout and let the other modules run.
+		timeout := CurrentOptions.BackupTimeout
+		if timeout <= 0 {
+			timeout = DefaultBackupTimeout
+		}
+		err = adb.Client.BackupWithTimeout(backupPath, arg, timeout)
 		if err != nil {
 			log.Debugf("Impossible to get backup: %v", err)
 			return err

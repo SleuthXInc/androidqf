@@ -6,10 +6,12 @@
 package adb
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	saveSlice "github.com/botherder/go-savetime/slice"
 	"github.com/mvt-project/androidqf/log"
@@ -165,6 +167,32 @@ func (a *ADB) Backup(outPath, arg string) error {
 	}
 	cmd := exec.Command(a.ExePath, args...)
 	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, string(output))
+	}
+	return nil
+}
+
+// ErrBackupTimedOut is returned when nobody confirmed the backup on the device in time.
+var ErrBackupTimedOut = errors.New("timed out waiting for on-device confirmation")
+
+// BackupWithTimeout is Backup with a bounded wait (SleuthX fork, 1.8.3-sleuthx3). `adb backup`
+// blocks until the on-device "Back up my data" prompt is answered; when `timeout` passes first, the
+// adb child — and only it — is killed and ErrBackupTimedOut returned, so the module loop logs
+// "ERROR: failed to run module backup: timed out waiting for on-device confirmation" and carries on
+// with the other modules.
+func (a *ADB) BackupWithTimeout(outPath, arg string, timeout time.Duration) error {
+	args := []string{"backup", "-nocompress", "-f", outPath, arg}
+	if a.Serial != "" {
+		args = append([]string{"-s", a.Serial}, args...)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, a.ExePath, args...)
+	output, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return ErrBackupTimedOut
+	}
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, string(output))
 	}

@@ -53,7 +53,19 @@ func main() {
 	flag.BoolVar(&verbose, "verbose", false, "Verbose mode")
 	flag.BoolVar(&verbose, "v", false, "Verbose mode")
 	flag.BoolVar(&fast, "fast", false, "Fast mode")
-	flag.BoolVar(&verbose, "f", false, "Fast mode")
+	// SleuthX fork: -f was bound to verbose; upstream ad7f4efa binds it to fast, as its help says.
+	flag.BoolVar(&fast, "f", false, "Fast mode")
+	// SleuthX fork (1.8.3-sleuthx3) — unattended answers, names and values from upstream #112.
+	opts := modules.CurrentOptions
+	flag.BoolVar(&opts.NonInteractive, "non-interactive", false, "Never prompt: a module without its answer is an error (upstream #112)")
+	flag.BoolVar(&opts.NonInteractive, "n", false, "Never prompt (short for -non-interactive)")
+	flag.StringVar(&opts.Backup, "backup", "", "Backup option: sms, all or none (upstream #112)")
+	flag.StringVar(&opts.Backup, "b", "", "Backup option (short for -backup)")
+	flag.StringVar(&opts.Download, "download", "", "APK download option: all, non-system or none (upstream #112)")
+	flag.StringVar(&opts.Download, "d", "", "APK download option (short for -download)")
+	flag.StringVar(&opts.RemoveTrusted, "remove-trusted", "", "Remove APKs signed with a trusted certificate: yes or no (upstream #112)")
+	flag.StringVar(&opts.IntrusionLogs, "intrusion-logs", "", "Download Intrusion Logs: yes or no (upstream #112)")
+	flag.DurationVar(&opts.BackupTimeout, "backup-timeout", modules.DefaultBackupTimeout, "How long to wait for the on-device backup confirmation before skipping the backup (SleuthX fork)")
 	flag.BoolVar(&list_modules, "list", false, "List modules and exit")
 	flag.BoolVar(&list_modules, "l", false, "List modules and exit")
 	flag.StringVar(&module, "module", "", "Only execute a specific module")
@@ -83,6 +95,13 @@ func main() {
 			log.Infof("- %s", mod.Name())
 		}
 		os.Exit(0)
+	}
+
+	// SleuthX fork: refuse an unattended run that leaves a prompt unanswered BEFORE touching the
+	// phone, so EOF on stdin can never be taken as an answer (the 2026-11-10 failure).
+	if err := modules.ValidateNonInteractive(opts, module); err != nil {
+		log.Error(err.Error())
+		os.Exit(2)
 	}
 
 	log.Debug("Starting androidqf")
@@ -178,5 +197,7 @@ func main() {
 	acq.Complete()
 	log.Info("Acquisition completed.")
 
-	systemPause()
+	if !opts.NonInteractive {
+		systemPause()
+	}
 }

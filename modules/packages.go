@@ -25,6 +25,30 @@ const (
 	apkKeepAll       = "No"
 )
 
+// downloadFlagLabel maps a -download value onto the prompt's own label ("" when not given).
+func downloadFlagLabel(value string) string {
+	switch value {
+	case "all":
+		return apkAll
+	case "non-system":
+		return apkNotSystem
+	case "none":
+		return apkNone
+	}
+	return ""
+}
+
+// removeTrustedFlagLabel maps a -remove-trusted value onto the prompt's own label.
+func removeTrustedFlagLabel(value string) string {
+	switch value {
+	case "yes":
+		return apkRemoveTrusted
+	case "no":
+		return apkKeepAll
+	}
+	return ""
+}
+
 type Packages struct {
 	StoragePath string
 	ApksPath    string
@@ -122,11 +146,15 @@ func (p *Packages) Run(acq *acquisition.Acquisition, fast bool) error {
 	)
 
 	log.Info("Would you like to download copies of all apps or only non-system ones?")
-	downloadPrompt := promptui.Select{
-		Label: "Download",
-		Items: []string{apkAll, apkNotSystem, apkNone},
-	}
-	_, download, err := downloadPrompt.Run()
+	// SleuthX fork: a -download answer (upstream #112) is used instead of the prompt.
+	download, err := resolveOption(CurrentOptions, downloadFlagLabel(CurrentOptions.Download), "-download (all, non-system, none)", func() (string, error) {
+		downloadPrompt := promptui.Select{
+			Label: "Download",
+			Items: []string{apkAll, apkNotSystem, apkNone},
+		}
+		_, option, err := downloadPrompt.Run()
+		return option, err
+	})
 	if err != nil {
 		return fmt.Errorf("failed to make selection for download option: %v", err)
 	}
@@ -144,11 +172,15 @@ func (p *Packages) Run(acq *acquisition.Acquisition, fast bool) error {
 		} else {
 			// Ask if the user want to remove trusted packages for unencrypted output
 			log.Info("Would you like to remove copies of apps signed with a trusted certificate to limit the size of the output folder?")
-			promptAll := promptui.Select{
-				Label: "Remove",
-				Items: []string{apkRemoveTrusted, apkKeepAll},
-			}
-			_, keepOption, err = promptAll.Run()
+			// SleuthX fork: a -remove-trusted answer (upstream #112) is used instead of the prompt.
+			keepOption, err = resolveOption(CurrentOptions, removeTrustedFlagLabel(CurrentOptions.RemoveTrusted), "-remove-trusted (yes, no)", func() (string, error) {
+				promptAll := promptui.Select{
+					Label: "Remove",
+					Items: []string{apkRemoveTrusted, apkKeepAll},
+				}
+				_, option, err := promptAll.Run()
+				return option, err
+			})
 			if err != nil {
 				return fmt.Errorf("failed to make selection for download option: %v",
 					err)
